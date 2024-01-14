@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -9,14 +10,17 @@ import (
 )
 
 var (
-	writer  *bufio.Writer
-	reader  *bufio.Reader
-	visited []bool
+	writer    *bufio.Writer
+	reader    *bufio.Reader
+	enemyList [][]int
+	visited   []bool
+	cage      Cage
 )
 
-const (
-	target = "SPGED"
-)
+type Cage struct {
+	cage1 []int
+	cage2 []int
+}
 
 func main() {
 
@@ -32,6 +36,17 @@ func main() {
 		N (3이상 10만 이하)
 		번호대로 앙숙의 수(M), 앙숙관계 번호
 
+		풀이 :
+		1번 원숭이는 무조건 cage1에 넣는다
+		1번 원숭이의 앙숙중 첫번째는 cage1에 넣는다.
+			앙숙 2번째, 3번째는 cage2에 넣는다.
+		cage에 넣어진 원숭이는 visited를 true로 한다.
+
+		일단 해보자.
+
+
+
+
 	*/
 
 	reader = bufio.NewReader(os.Stdin)
@@ -43,36 +58,27 @@ func main() {
 	input = readLineInt()
 
 	N := input.([]int)[0]
-	board := make([]string, N)
+	enemyList = make([][]int, N+1)
+	visited = make([]bool, N+1)
 
-	impossible := false // 불가능한 경우 체크
+	for i := 1; i <= N; i++ {
+		input = readLineInt()
+		// M := input.([]int)[0]
+		enemys := input.([]int)[1:]
 
-	for i := 0; i < N; i++ {
-		input = readLine()
-		word := input.(string)
-
-		if strings.Count(word, "G") == 4 && strings.Count(word, "Y") == 1 {
-			impossible = true
-		}
-		board[i] = word
+		enemyList[i] = make([]int, 0)
+		enemyList[i] = append(enemyList[i], enemys...)
 	}
 
-	// 불가능한 조건
-	if impossible {
-		writer.WriteString("IMPOSSIBLE\n")
-		return
+	cage.cage1 = make([]int, 0)
+	cage.cage2 = make([]int, 0, 3)
+
+	for i := 1; i <= N; i++ {
+		putMonkeyInCage(i)
 	}
 
-	writer.WriteString(target + "\n")
+	fmt.Printf("%v", cage)
 
-	// SPEED처럼 E가 2번 나오는걸 target으로 잡지 않고 더 쉬운걸 target으로 해도 되는지 테스트
-	for _, word := range board {
-		visited = make([]bool, 5) // G, R로 매칭되면 true로 폐기하도록
-
-		answer := findPossibleAnswer(word)
-
-		writer.WriteString(answer + "\n")
-	}
 }
 
 func readLineInt() []int {
@@ -97,63 +103,17 @@ func readLine() string {
 	return input
 }
 
-func findPossibleAnswer(word string) string {
-	answer := make([]byte, 5)
-
-	findGreen(word, &answer)
-	findYellow(word, &answer)
-	findGrey(word, &answer)
-	return string(answer)
-}
-
-// Green이면 answer에 매칭
-func findGreen(word string, answer *[]byte) {
-	for i, char := range word {
-		if char == 'G' {
-			(*answer)[i] = target[i]
-			visited[i] = true
-		}
-	}
-}
-
-// Yellow면 answer에 가능한 글자 매칭
-func findYellow(word string, answer *[]byte) {
-	for i, char := range word {
-		if char == 'Y' {
-			idx := findNoMatchIdx(i) // (Green에서 매칭된거 제외하고 매칭)
-			(*answer)[i] = target[idx]
-			visited[idx] = true
-		}
-	}
-}
-
-// Grey면 무조건 "F"로 매칭
-func findGrey(word string, answer *[]byte) {
-	for i, char := range word {
-		if char == 'B' {
-			(*answer)[i] = 'F'
-		}
-	}
-}
-
-// 사용 안한 글자면서 정답과 위치가 다른 글자 찾기
-func findNoMatchIdx(i int) int {
-
-	// 일단 본인 자리보다 뒤에부터 매칭해가도록 함
-	// cause : (뒤쪽에서 본인자리랑 같은 글자가 매칭될수도 있어서)
-	for idx := i + 1; idx < 5; idx++ {
-		if !visited[idx] {
-			return idx
-		}
+func putMonkeyInCage(i int) {
+	// i : 대상     enemy : 앙숙
+	if !visited[i] {
+		cage.cage1 = append(cage.cage1, i)
+		visited[i] = true
 	}
 
-	// 뒤에 매칭될 수 있는 글자가 없으면, 앞에서부터 검사
-	for idx := range visited {
-		if !visited[idx] {
-			return idx
+	for idx, enemy := range enemyList[i] {
+		if visited[enemy] {
+			continue
 		}
+		putMonkeyInCage(enemy)
 	}
-
-	return 99 // 문제 조건에 맞게 들어오면 절대 안탐. 탔으면 런타임에러 (생각 못한 반례가 있다는 것)
-
 }
