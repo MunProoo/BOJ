@@ -2,7 +2,7 @@ package main
 
 import (
 	"bufio"
-	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -12,14 +12,16 @@ import (
 var (
 	writer    *bufio.Writer
 	reader    *bufio.Reader
-	enemyList [][]int
+	enemyList []map[int]bool
 	visited   []bool
 	cage      Cage
 )
 
 type Cage struct {
-	cage1 []int
-	cage2 []int
+	cage1Map map[int]interface{}
+	cage1    []int
+	cage2Map map[int]interface{}
+	cage2    []int
 }
 
 func main() {
@@ -42,9 +44,8 @@ func main() {
 			앙숙 2번째, 3번째는 cage2에 넣는다.
 		cage에 넣어진 원숭이는 visited를 true로 한다.
 
-		일단 해보자.
-
-
+		* cage1에서 앙숙관계에 대해 확인이 필요하다.
+		** cage2에 적어도 1마리는 넣어야 한다.
 
 
 	*/
@@ -58,7 +59,7 @@ func main() {
 	input = readLineInt()
 
 	N := input.([]int)[0]
-	enemyList = make([][]int, N+1)
+	enemyList = make([]map[int]bool, N+1)
 	visited = make([]bool, N+1)
 
 	for i := 1; i <= N; i++ {
@@ -66,18 +67,38 @@ func main() {
 		// M := input.([]int)[0]
 		enemys := input.([]int)[1:]
 
-		enemyList[i] = make([]int, 0)
-		enemyList[i] = append(enemyList[i], enemys...)
+		enemyList[i] = make(map[int]bool)
+		for _, enemy := range enemys {
+			enemyList[i][enemy] = true
+		}
 	}
 
+	cage.cage1Map = make(map[int]interface{})
 	cage.cage1 = make([]int, 0)
-	cage.cage2 = make([]int, 0, 3)
+	cage.cage2Map = make(map[int]interface{})
+	cage.cage2 = make([]int, 0)
 
 	for i := 1; i <= N; i++ {
 		putMonkeyInCage(i)
 	}
 
-	fmt.Printf("%v", cage)
+	if len(cage.cage2) == 0 {
+		// cage2에 아무것도 없으면 cage1에서 빼서 넣어준다
+		cage.cage2 = append(cage.cage2, cage.cage1[0])
+		cage.cage1 = cage.cage1[1:]
+	}
+
+	sort.Ints(cage.cage1)
+	sort.Ints(cage.cage2)
+	writer.WriteString(strconv.Itoa(len(cage.cage1)) + " ")
+	for _, monkey := range cage.cage1 {
+		writer.WriteString(strconv.Itoa(monkey) + " ")
+	}
+
+	writer.WriteString("\n" + strconv.Itoa(len(cage.cage2)) + " ")
+	for _, monkey := range cage.cage2 {
+		writer.WriteString(strconv.Itoa(monkey) + " ")
+	}
 
 }
 
@@ -105,15 +126,67 @@ func readLine() string {
 
 func putMonkeyInCage(i int) {
 	// i : 대상     enemy : 앙숙
+
 	if !visited[i] {
-		cage.cage1 = append(cage.cage1, i)
-		visited[i] = true
+		isPossibleCage1 := isPossiblePushCage1(i) // cage1에 넣어도 되는지 앙숙관계 확인
+		if isPossibleCage1 {
+			cage.cage1Map[i] = true
+			cage.cage1 = append(cage.cage1, i) // 실제 케이지에 넣는다
+			visited[i] = true
+		} else {
+			cage.cage2Map[i] = true
+			cage.cage2 = append(cage.cage2, i) // 실제 케이지에 넣는다
+			visited[i] = true
+		}
 	}
 
-	for idx, enemy := range enemyList[i] {
+	for enemy := range enemyList[i] {
 		if visited[enemy] {
 			continue
 		}
 		putMonkeyInCage(enemy)
 	}
+}
+
+func isPossiblePushCage1(i int) bool {
+	cnt := 0
+
+	// 앙숙을 기준 가능성 체크
+	for enemy := range enemyList[i] {
+		// cage1에 앙숙이 있는가.
+		if _, isExist := cage.cage1Map[enemy]; isExist {
+			cnt++
+		}
+
+		/* 로직 문제점
+		enemy가 대상보다 크면 아직 안들어갔을 확률이 있음. ->  뒤늦게 들어올 수 있음
+		enemy의 앙숙이 나밖에 없으면 입구컷 안당하고 cage1 들어온다.
+
+		ex )4 <-> 5
+		    5 <-> 4,6
+			6 <-> 5
+			일 때, 6을 아직 확정짓지 않은 상태에서 5를 체크해서 cage1에 넣은경우,
+			추후 6의 가능성에서 'cage1 넣어도 된다고' 계산됨 (cage1에 앙숙은 5 1마리밖에 없으니까).
+
+			before : 6이 들어온다 -> 앙숙을 체크했을 때 넣어도 되는가? 에서
+			after : 6이 들어온다 -> 대상이 들어갔을 때 위법되는가? -> 본인이 들어갔을 때 앙숙이 위법되는가?
+
+		*/
+
+		// 앙숙이 2명이나 있으면 입구컷
+		if cnt == 2 {
+			return false
+		}
+
+		if cage.cage1Map[i] != nil { // 내부적으로 계속 재귀를 탈것이니까 신규 대상일 때만 아래 로직 수행
+			// 대상을 넣었을 때 앙숙들도 가능한지 확인
+			cage.cage1Map[i] = true
+			if isPossible := isPossiblePushCage1(enemy); !isPossible {
+				cage.cage1Map[i] = nil // 취소
+				return false
+			}
+		}
+	}
+
+	return true
 }
