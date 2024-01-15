@@ -48,6 +48,21 @@ func main() {
 		** cage2에 적어도 1마리는 넣어야 한다.
 
 
+		로직 문제점
+		enemy가 대상보다 크면 아직 안들어갔을 확률이 있음. ->  뒤늦게 들어올 수 있음
+		enemy의 앙숙이 나밖에 없으면 입구컷 안당하고 cage1 들어온다.
+
+		ex )4 <-> 5
+		    5 <-> 4,6
+			6 <-> 5
+			일 때, 6을 아직 확정짓지 않은 상태에서 5를 체크해서 cage1에 넣은경우,
+			추후 6의 가능성에서 'cage1 넣어도 된다고' 계산됨 (cage1에 앙숙은 5 1마리밖에 없으니까).
+
+			before : 6이 들어온다 -> 앙숙을 체크했을 때 넣어도 되는가? 에서
+			after : 6이 들어온다 -> 대상이 들어갔을 때 위법되는가? -> 본인이 들어갔을 때 앙숙이 위법되는가?
+
+
+
 	*/
 
 	reader = bufio.NewReader(os.Stdin)
@@ -148,45 +163,34 @@ func putMonkeyInCage(i int) {
 	}
 }
 
-func isPossiblePushCage1(i int) bool {
-	cnt := 0
+func isPossiblePushCage1(monkey int) bool {
+	// 앙숙을 기준 가능성 체크 (대상을 cage1에 넣어도 되는가)
+	cnt := findCage1EnemyCnt(monkey)
 
-	// 앙숙을 기준 가능성 체크
-	for enemy := range enemyList[i] {
-		// cage1에 앙숙이 있는가.
-		if _, isExist := cage.cage1Map[enemy]; isExist {
-			cnt++
-		}
+	if cnt >= 2 {
+		return false
+	}
 
-		/* 로직 문제점
-		enemy가 대상보다 크면 아직 안들어갔을 확률이 있음. ->  뒤늦게 들어올 수 있음
-		enemy의 앙숙이 나밖에 없으면 입구컷 안당하고 cage1 들어온다.
-
-		ex )4 <-> 5
-		    5 <-> 4,6
-			6 <-> 5
-			일 때, 6을 아직 확정짓지 않은 상태에서 5를 체크해서 cage1에 넣은경우,
-			추후 6의 가능성에서 'cage1 넣어도 된다고' 계산됨 (cage1에 앙숙은 5 1마리밖에 없으니까).
-
-			before : 6이 들어온다 -> 앙숙을 체크했을 때 넣어도 되는가? 에서
-			after : 6이 들어온다 -> 대상이 들어갔을 때 위법되는가? -> 본인이 들어갔을 때 앙숙이 위법되는가?
-
-		*/
-
-		// 앙숙이 2명이나 있으면 입구컷
-		if cnt == 2 {
+	// 대상 기준으론 넣어도 됨. 앙숙들은 대상이 들어와도 괜찮은지 확인
+	cage.cage1Map[monkey] = true // 임시로 넣어놓는다
+	for enemy := range enemyList[monkey] {
+		enemyCount := findCage1EnemyCnt(enemy)
+		if enemyCount >= 2 && cage.cage1Map[enemy] != nil { // 기존에 넣은 원숭이에게 문제생김
+			cage.cage1Map[monkey] = nil // 넣으면 안되니까 다시 뺀다
 			return false
-		}
-
-		if cage.cage1Map[i] != nil { // 내부적으로 계속 재귀를 탈것이니까 신규 대상일 때만 아래 로직 수행
-			// 대상을 넣었을 때 앙숙들도 가능한지 확인
-			cage.cage1Map[i] = true
-			if isPossible := isPossiblePushCage1(enemy); !isPossible {
-				cage.cage1Map[i] = nil // 취소
-				return false
-			}
 		}
 	}
 
 	return true
+}
+
+// Cage1에 앙숙이 몇 마리 들어있는지 체크
+func findCage1EnemyCnt(monkey int) int {
+	cnt := 0
+	for enemy := range enemyList[monkey] {
+		if _, isExist := cage.cage1Map[enemy]; isExist {
+			cnt++
+		}
+	}
+	return cnt
 }
