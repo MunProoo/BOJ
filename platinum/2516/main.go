@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -12,7 +11,7 @@ import (
 var (
 	writer    *bufio.Writer
 	reader    *bufio.Reader
-	enemyList []map[int]bool
+	enemyList [][]int
 	visited   []bool
 	cage      Cage
 )
@@ -22,11 +21,18 @@ const (
 	Cage2
 )
 
+// type Cage struct {
+// 	cage1Map map[int]interface{}
+// 	cage1    []int
+// 	cage2Map map[int]interface{}
+// 	cage2    []int
+// }
+
 type Cage struct {
-	cage1Map map[int]interface{}
-	cage1    []int
-	cage2Map map[int]interface{}
-	cage2    []int
+	cage1       []bool
+	cage2       []bool
+	answerCage1 []int
+	answerCage2 []int
 }
 
 func main() {
@@ -66,6 +72,10 @@ func main() {
 
 		작업 없을때까지 반복한다. (난 동시에 하려해서 안됨)
 
+		Map 대신 슬라이스를 사용해서 시간 단축시도
+		(1) enemyList를 Map이 아닌 슬라이스에 담기
+		(2) cage를 map이 아닌 슬라이스로 사용하기
+
 	*/
 
 	// readFile, _ := os.Open("D:\\GoWorkspace\\src\\algorithm\\platinum\\2516\\input.txt")
@@ -82,7 +92,7 @@ func main() {
 	input = readLineInt()
 
 	N := input.([]int)[0]
-	enemyList = make([]map[int]bool, N+1)
+	enemyList = make([][]int, N+1)
 	visited = make([]bool, N+1)
 
 	for i := 1; i <= N; i++ {
@@ -90,16 +100,12 @@ func main() {
 		// M := input.([]int)[0]
 		enemys := input.([]int)[1:]
 
-		enemyList[i] = make(map[int]bool)
-		for _, enemy := range enemys {
-			enemyList[i][enemy] = true
-		}
+		// enemyList[i] = make([]int, 3)
+		enemyList[i] = enemys
 	}
 
-	cage.cage1Map = make(map[int]interface{})
-	cage.cage1 = make([]int, 0)
-	cage.cage2Map = make(map[int]interface{})
-	cage.cage2 = make([]int, 0)
+	cage.cage1 = make([]bool, 100001)
+	cage.cage2 = make([]bool, 100001)
 
 	// 원숭이들 한우리에 밀어넣음
 	putMonkeyInCage(N)
@@ -107,6 +113,7 @@ func main() {
 	cageType := Cage1 // 다음 작업은 어느 cage에서 해야하는가 값
 	var repeatedFlag bool
 
+	// 원숭이 나눠주는 작업
 	for {
 		if cageType == Cage1 {
 			cageType, repeatedFlag = cage1에서내쫓기()
@@ -119,29 +126,33 @@ func main() {
 		}
 	}
 
-	for monkey := range cage.cage1Map {
-		cage.cage1 = append(cage.cage1, monkey)
+	cage.answerCage1 = make([]int, 0)
+	for monkey, exist := range cage.cage1 {
+		if exist {
+			cage.answerCage1 = append(cage.answerCage1, monkey)
+		}
 	}
 
-	for monkey := range cage.cage2Map {
-		cage.cage2 = append(cage.cage2, monkey)
+	cage.answerCage2 = make([]int, 0)
+	for monkey, exist := range cage.cage2 {
+		if exist {
+			cage.answerCage2 = append(cage.answerCage2, monkey)
+		}
 	}
 
-	if len(cage.cage2) == 0 {
-		// cage2에 아무것도 없으면 cage1에서 빼서 넣어준다
+	// cage2에 아무도 없으면 cage1에서 빼서 넣어준다
+	if len(cage.answerCage2) == 0 {
 		cage.cage2 = append(cage.cage2, cage.cage1[0])
 		cage.cage1 = cage.cage1[1:]
 	}
 
-	sort.Ints(cage.cage1)
-	sort.Ints(cage.cage2)
-	writer.WriteString(strconv.Itoa(len(cage.cage1)) + " ")
-	for _, monkey := range cage.cage1 {
+	writer.WriteString(strconv.Itoa(len(cage.answerCage1)) + " ")
+	for _, monkey := range cage.answerCage1 {
 		writer.WriteString(strconv.Itoa(monkey) + " ")
 	}
 
-	writer.WriteString("\n" + strconv.Itoa(len(cage.cage2)) + " ")
-	for _, monkey := range cage.cage2 {
+	writer.WriteString("\n" + strconv.Itoa(len(cage.answerCage2)) + " ")
+	for _, monkey := range cage.answerCage2 {
 		writer.WriteString(strconv.Itoa(monkey) + " ")
 	}
 
@@ -172,23 +183,23 @@ func readLine() string {
 // 일단 전부 cage1로
 func putMonkeyInCage(N int) {
 	for i := 1; i <= N; i++ {
-		cage.cage1Map[i] = true
+		cage.cage1[i] = true
 	}
 }
 
 // Cage에 있어도 되는지 확인
 func isPossibleInCage(monkey int, flag int) bool {
-	var anyCage map[int]interface{}
+	var anyCage []bool
 	if flag == 1 { // cage1 체크
-		anyCage = cage.cage1Map
+		anyCage = cage.cage1
 	} else { // cage2 체크
-		anyCage = cage.cage2Map
+		anyCage = cage.cage2
 	}
 
 	// 본인이 들어가도 되는지 여부 확인
 	cnt := 0
-	for enemy := range enemyList[monkey] {
-		if _, isExist := anyCage[enemy]; isExist {
+	for _, enemy := range enemyList[monkey] {
+		if anyCage[enemy] {
 			cnt++
 		}
 	}
@@ -197,13 +208,15 @@ func isPossibleInCage(monkey int, flag int) bool {
 }
 
 func cage1에서내쫓기() (cageType int, repeatedFlag bool) {
-	for monkey := range cage.cage1Map {
-		// 원숭이가 cage1에서 못있는 애인지 확인
-		if possible := isPossibleInCage(monkey, 1); !possible {
-			// cage1에 못있으면 cage2로 이동시키고 확인
-			cage.cage2Map[monkey] = true
-			delete(cage.cage1Map, monkey)
-			repeatedFlag = true
+	for monkey := range cage.cage1 {
+		if cage.cage1[monkey] {
+			// 원숭이가 cage1에서 못있는 애인지 확인
+			if possible := isPossibleInCage(monkey, 1); !possible {
+				// cage1 -> cage2
+				cage.cage1[monkey] = false
+				cage.cage2[monkey] = true
+				repeatedFlag = true
+			}
 		}
 	}
 
@@ -211,13 +224,16 @@ func cage1에서내쫓기() (cageType int, repeatedFlag bool) {
 }
 
 func cage2에서내쫓기() (cageType int, repeatedFlag bool) {
-	for monkey := range cage.cage2Map {
-		// 원숭이가 cage2에서 못있는 애인지 확인
-		if possible := isPossibleInCage(monkey, 2); !possible {
-			// cage2에 못있으면 cage1로 이동시키고 확인
-			cage.cage1Map[monkey] = true
-			delete(cage.cage2Map, monkey)
-			repeatedFlag = true
+	for monkey := range cage.cage2 {
+		if cage.cage2[monkey] {
+
+			// 원숭이가 cage2에서 못있는 애인지 확인
+			if possible := isPossibleInCage(monkey, 2); !possible {
+				// cage2 -> cage1
+				cage.cage2[monkey] = false
+				cage.cage1[monkey] = true
+				repeatedFlag = true
+			}
 		}
 	}
 	return Cage1, repeatedFlag
