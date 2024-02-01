@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -15,7 +16,7 @@ var (
 	sb             strings.Builder
 	defaultArr     [32768]byte
 	defaultPointer Pointer
-	// roopMemory     []int  // 이부분은 스택으로 해야겠다. 추후 문법에러는 없는지 확인 후 작업들어가도록
+	commands       []string
 )
 
 type Pointer int
@@ -80,30 +81,59 @@ func main() {
 	reader = bufio.NewReader(os.Stdin)
 	// scanner := bufio.NewScanner(reader)
 	writer = bufio.NewWriter(os.Stdout)
-	sb = strings.Builder{}
 	defer writer.Flush()
 
 	var input interface{}
 	input = readLineInt()
 	T := input.([]int)[0] // 프로그램 명령어 갯수
 
-	defaultArr = [32768]byte{}
-	defaultPointer = 0
+	commands = make([]string, T)
 
-	for T > 0 {
-		input = readLine()
-		command := input.(string)
+	// 명령어 Input
+	for i := 0; i < T; i++ {
+		nextFlag := false
+		for !nextFlag {
+			input = readLine()
+			command := input.(string)
 
-		// brainfuck 프로그램 종료
-		if strings.EqualFold(command, "end") {
-			T--
+			// BrainFuck 프로그램 끝
+			if strings.EqualFold(command, "end") {
+				nextFlag = true
+				continue
+			}
+			// 프로그램에서 주석부분 제거
+			if index := strings.Index(command, "%"); index != -1 {
+				command = command[:index]
+			}
+
+			commands[i] += command
 		}
 
-		// 명령어 한 줄을 단위 명령어로 바꿔서 확인
-		interpreter(command)
 	}
 
-	writer.WriteString(sb.String())
+	// Output
+	for idx, command := range commands {
+		sb = strings.Builder{}
+		sb.WriteString(fmt.Sprintf("PROGRAM #%d:\n", idx+1))
+		// [ , ]가 문법에 맞는지 확인
+		if !isVaildCommand(command) {
+			sb.WriteString("COMPILE ERROR")
+			writer.WriteString(sb.String() + "\n") // 여기 안해줬었네;
+			continue
+		}
+
+		// BrainFuck 프로그램 기본 초기 설정
+		defaultArr = [32768]byte{}
+		defaultPointer = 0
+
+		// 대괄호 매핑
+		bracketMap := mappingBrackets(command)
+
+		// brainfuck 해석
+		interpreter(command, bracketMap)
+
+		writer.WriteString(sb.String() + "\n")
+	}
 
 }
 
@@ -129,9 +159,9 @@ func readLine() string {
 	return input
 }
 
-func interpreter(command string) {
-	for _, unitCommand := range command {
-		switch unitCommand {
+func interpreter(command string, bracketMap map[int]int) {
+	for i := 0; i < len(command); i++ {
+		switch command[i] {
 		case '>':
 			defaultPointer.Increase()
 		case '<':
@@ -142,12 +172,60 @@ func interpreter(command string) {
 			defaultArr[defaultPointer]--
 		case '.':
 			sb.WriteString(string(defaultArr[defaultPointer]))
+		// 루프 작업
 		case '[':
-			// 루프 작업 -> 스택으로 해야할듯?
+			if defaultArr[defaultPointer] == 0 {
+				i = bracketMap[i] - 1 // i++ 되므로
+				continue
+			}
 		case ']':
-			// 루프 작업
-		case '%':
-
+			if defaultArr[defaultPointer] != 0 {
+				i = bracketMap[i]
+				continue
+			}
+			// 루프 종료
 		}
 	}
+}
+
+// 명령어 괄호가 문제없는지 확인
+func isVaildCommand(s string) bool {
+	stack := []rune{}
+
+	for _, char := range s {
+		if char == '[' {
+			stack = append(stack, char)
+		} else if char == ']' {
+			if len(stack) == 0 || stack[len(stack)-1] != '[' {
+				// ']'가 나왔는데 짝이 맞지 않거나 스택이 비어있는 경우
+				return false
+			}
+			// 짝이 맞아 스택에서 '['를 제거
+			stack = stack[:len(stack)-1]
+		}
+	}
+
+	// 스택이 비어있으면 모든 짝이 맞음
+	return len(stack) == 0
+}
+
+// 대괄호 짝맺기
+func mappingBrackets(s string) map[int]int {
+	stack := []int{}
+	bracketMap := make(map[int]int)
+
+	for idx, char := range s {
+		if char == '[' {
+			stack = append(stack, idx)
+		} else if char == ']' {
+			start := stack[len(stack)-1]
+			end := idx
+			bracketMap[start] = end
+			bracketMap[end] = start
+			// 짝이 맞아 스택에서 '['를 제거
+			stack = stack[:len(stack)-1]
+		}
+	}
+
+	return bracketMap
 }
