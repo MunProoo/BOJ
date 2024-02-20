@@ -16,17 +16,19 @@ var (
 	sb             strings.Builder
 	defaultArr     []byte
 	defaultPointer Pointer
-	commands       []string // brainfuck 프로그램
-	inputs         string   // brainfuck에 입력될 문자
-	// inputs         []rune   // brainfuck에 입력될 문자
+	inputs         string // brainfuck에 입력될 문자
 
 	arrSize int // defaultArr 크기
+)
+
+const (
+	commandLimit = 50000000
 )
 
 type Pointer int
 
 func (p *Pointer) Increase() {
-	if int(*p) == arrSize {
+	if int(*p) == arrSize-1 {
 		*p = 0
 		return
 	}
@@ -34,16 +36,23 @@ func (p *Pointer) Increase() {
 }
 func (p *Pointer) Decrease() {
 	if *p == 0 {
-		*p = 32767
+		*p = Pointer(arrSize) - 1
 		return
 	}
 	*p--
+}
+
+type CheckValue struct {
+	value   byte
+	pointer Pointer
 }
 
 func main() {
 
 	/*
 		3954 Brainfuck 인터프리터
+		역대급 재미없었던 문제.. 무한루프의 정의부터 명확하지 않아서 많이 헤멨다.
+		질문게시판 엄청 이용함..
 
 		, : 문자 하나를 읽고 포인터가 가리키는 곳에 저장한다. (입력의 마지막이면 255를 저장한다)
 
@@ -51,25 +60,19 @@ func main() {
 		(5천만번을 반복해야 끝나는 루프는 주어지지 않는다)
 
 		풀이 1.
-		(1)무한루프가 된다는 것은 포인터가 가리키는 값이 0이 안된다는 것.
-			- 그냥 단순히 루프를 통해 0과의 거리가 멀어지는지만 체크했는데, 오버플로우가 있는걸 생각했어야함
-			- 루프의 시작값과 루프 후 값의 변화량이 중요
+		(1)무한루프인 조건을 생객해내 걸러낸다.
+		- 아무 명령어가 없다.
+		- 아무리 반복해도 루프가 끝나지 않는 조건이다
+		>> 처음엔 diff = (반복 이전 값 - 이후 값)을 비교하여 절대로 defaultArr[defaultPointer]가 0이 안되는 조건을 설정했었는데,
+		ex ) 255 % diff != 0 이면 절대 닿을 수 없다.
 
-			1
-			1 9 1
-			++[[++]+]
-			a
+		이 부분은 값이 오버플로우, 언더플로우되면 diff값이 달라지므로 반례가 생긴다.
+		오버플로우 언더플로우의 경우를 배제하기 위해서 어떻게 할까 고민하다가, Threshold를 사용하여 해결하였다.
 
 
-			이런 경우라면, 안쪽 루프가 1번 반복하고 무한루프에 빠짐.
-			01, 23, 45, 67, 80     시작:2, diff : 2
-			12, 34, 56, 78, 01     시작:3, diff : 2
+		- 명령어 실행이 5천만번이상이다.
 
-			(arrSize-1-시작 ) % diff == 0이 아니라면, 무한루프다.
-
-		... 위의 식과 다른데, EOF에 의해 현재 값이 바뀌는 경우가 있음.
-		변수가 brainfuck 입력값이므로 입력한 값을 다 쓰고나서 수식을 사용하도록 구현하면?
-		-> 제출하니 시간초과 (9%)
+		(2)만약 5천만번을 돌았다면, 무한루프 속에 있다고 판단하여 가장 바깥의 루프를 출력한다.
 
 
 	*/
@@ -84,9 +87,6 @@ func main() {
 	input = readLineInt()
 	T := input.([]int)[0]
 
-	// commands = make([]string, sc)
-	// inputs = make([]rune, si) // brainfuck 입력
-
 	// 명령어 Input
 	for i := 0; i < T; i++ {
 		// 입력1
@@ -97,19 +97,17 @@ func main() {
 		defaultArr = make([]byte, arrSize)
 		defaultPointer = 0
 
-		// 입력2 (프로그램)
+		// 입력2 (brainfuck 프로그램)
 		input = readLine()
 		command := input.(string)
 
-		// 입력3 (프로그램에 입력)
+		// 입력3 (brainfuck 프로그램의 입력)
 		input = readLine()
 		inputs = input.(string)
 
-		// 대괄호 매핑
-		bracketMap := mappingBrackets(command)
-
-		// brainfuck 해석
-		interpreter(command, bracketMap)
+		// 대괄호 매핑 , 감싼 루프 체크
+		bracketMap, enclosingBrackets := mappingBrackets(command)
+		interpreter(command, bracketMap, enclosingBrackets)
 
 	}
 	writer.WriteString(sb.String())
@@ -137,27 +135,45 @@ func readLine() string {
 	return input
 }
 
-func interpreter(command string, bracketMap map[int]int) {
+func interpreter(command string, bracketMap map[int]int, enclosingBrackets map[int]int) {
 	inputCnt := 0 // brainfuck 입력 사용 개수
 	inputLength := len(inputs)
-	loopFlag := false
-	var initValue byte
+	// loopFlag := false
+	// var initValue byte
+	initValueMap := make(map[int]CheckValue) // 반복문이 시작할 때 defaultPointer 값. (반복문을 통해서 얼마의 차이가 생기는지 확인용)
+
+	// 루프를 돌았는지 안돌았는지 확인
+	loopFlag := make(map[int]bool) // 중첩 반복문인 경우 기존 변수 하나로는 덮어쓰기가 되므로 map으로 설정
+	commandCount := 0              // 커맨드 카운트
 
 	for i := 0; i < len(command); i++ {
 		switch command[i] {
 		case '>':
+			commandCount++
 			defaultPointer.Increase()
 		case '<':
+			commandCount++
 			defaultPointer.Decrease()
 		case '+':
-			defaultArr[defaultPointer]++
+			commandCount++
+			if defaultArr[defaultPointer] == 255 {
+				defaultArr[defaultPointer] = 0
+
+			} else {
+				defaultArr[defaultPointer]++
+			}
 		case '-':
-			defaultArr[defaultPointer]--
+			commandCount++
+			if defaultArr[defaultPointer] == 0 {
+				defaultArr[defaultPointer] = 255
+			} else {
+				defaultArr[defaultPointer]--
+			}
 		case '.':
-			// sb.WriteString(string(defaultArr[defaultPointer]))
+			commandCount++
 		// 루프 작업
 		case '[':
-
+			commandCount++
 			if defaultArr[defaultPointer] == 0 { // 루프가 끝남
 				i = bracketMap[i] - 1 // i++ 되므로
 				// loopFlag = false
@@ -165,46 +181,73 @@ func interpreter(command string, bracketMap map[int]int) {
 			}
 
 		case ']':
+			commandCount++
+			start := bracketMap[i]
+			end := i
+
+			// 반복하기 전의 값 할당
+			prevValue := initValueMap[start]
+			initValue := prevValue.value
+			initPointer := prevValue.pointer
+
+			initValueMap[start] = CheckValue{defaultArr[defaultPointer], defaultPointer}
 			if defaultArr[defaultPointer] != 0 {
+				// 무한루프 판별 안되면 다시 반복해야함. 기존에는 이 코드의 위치가 이상해서 잘못나오고 있었음
 				i = bracketMap[i]
 
-				// ,로 인한 EOF라는 변수가 있어서 수식으로 계산. 무조건 루프 돌려야함
-				if strings.Contains(command, ",") {
+				// ,로 인한 EOF라는 변수가 있어서 무조건 루프 돌려야함
+				if strings.Contains(command[start:end], ",") {
 					continue
 				}
 
 				// 이미 한 번은 돌고 왔음
-				if loopFlag {
-
-					// byte는 255에서 오버플로우가 나는걸 생각 못함..
-					diff := abs(int(initValue) - int(defaultArr[defaultPointer]))
-					if diff == 0 {
-						end := bracketMap[i]
-						start := bracketMap[end]
+				if loopFlag[i] {
+					// 명령어가 아예 없어서 무한루프인 경우
+					if (end - start - 1) == 0 {
 						sb.WriteString(fmt.Sprintf("Loops %d %d\n", start, end))
 						return
 					}
 
-					expression := (arrSize - 1 - int(initValue)) % int(diff)
-					// fmt.Println(expression)
+					currentValue := int(defaultArr[defaultPointer])
 
-					// 오버,언더 플로우 후에 0을 지나침
-					if expression != 0 {
-						end := bracketMap[i]
-						start := bracketMap[end]
-						sb.WriteString(fmt.Sprintf("Loops %d %d\n", start, end))
-						return
+					diff := abs(int(initValue) - currentValue)
+					threshold := 130 // 255의 대략 반보다 크면 오버플로우나 언더플로우가 일어난 경우로 생각하여 건너뛰기
+					if diff >= threshold {
+						continue
 					}
+
+					// if diff == 0 && initPointer == defaultPointer { // 값의 변화가 없는 경우. -> 무한 루프
+					// (1번째 반복 종료시 포인터 == 2번째 반복 종료 시 포인터) && (255 % diff) == 0이 아니라면, 무한루프다.
+					if diff != 0 {
+						expression := 255 % int(diff)
+						// 오버,언더 플로우 후에 0을 지나침
+						if expression != 0 && initPointer == defaultPointer {
+							sb.WriteString(fmt.Sprintf("Loops %d %d\n", start, end))
+							return
+						}
+					}
+
+					// 생각해낸 무한루프를 걸러냈고, 그럼에도 5천만번 이상 명령이 실행됐으니 실행 루프를 감싸고 있는 루프를 무한루프로 생각
+					if commandCount > commandLimit {
+						if encStart, exist := enclosingBrackets[start]; exist {
+							encEnd := bracketMap[encStart]
+							sb.WriteString(fmt.Sprintf("Loops %d %d\n", encStart, encEnd))
+							return
+						} else {
+							sb.WriteString(fmt.Sprintf("Loops %d %d\n", start, end))
+							return
+						}
+					}
+
 				}
-
-				loopFlag = true
-				initValue = defaultArr[defaultPointer]
+				loopFlag[start] = true // 반복시키기 위해서 i의 값을 초기화했는데, 이 코드에선 반영을 안해줘서 루프 확인이 잘 안됐음
 			} else {
-				loopFlag = false
+				loopFlag[start] = false
 			}
 
 			// 루프 종료
 		case ',':
+			commandCount++
 			if inputCnt < inputLength {
 				defaultArr[defaultPointer] = inputs[inputCnt]
 			} else {
@@ -218,12 +261,19 @@ func interpreter(command string, bracketMap map[int]int) {
 }
 
 // 대괄호 짝맺기
-func mappingBrackets(s string) map[int]int {
+func mappingBrackets(s string) (bracketMap map[int]int, enclosingBrackets map[int]int) {
 	stack := []int{}
-	bracketMap := make(map[int]int)
+	bracketMap = make(map[int]int)
+	enclosingBrackets = make(map[int]int) // 가장 바깥쪽 루프
+	encStart := 0
 
 	for idx, char := range s {
 		if char == '[' {
+			if len(stack) == 0 {
+				encStart = idx
+			} else {
+				enclosingBrackets[idx] = encStart
+			}
 			stack = append(stack, idx)
 		} else if char == ']' {
 			start := stack[len(stack)-1]
@@ -235,7 +285,7 @@ func mappingBrackets(s string) map[int]int {
 		}
 	}
 
-	return bracketMap
+	return
 }
 
 func abs(a int) int {
