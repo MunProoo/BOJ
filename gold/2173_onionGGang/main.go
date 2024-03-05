@@ -10,11 +10,17 @@ import (
 )
 
 var (
+	// 입출력
 	writer *bufio.Writer
 	reader *bufio.Reader
-	// defaultArr []byte
-	sb      strings.Builder
-	arrSize int // defaultArr 크기
+	sb     strings.Builder
+
+	// 풀이 변수
+	N, M      int
+	prefixSum [][]int
+	board     [][]int
+
+	maxVisited [][]bool // 이미 사용한 최대값은 제외
 )
 
 func main() {
@@ -33,7 +39,8 @@ func main() {
 		1. 2차원 배열의 누적합 구하기
 		https://nahwasa.com/entry/%EB%88%84%EC%A0%81-%ED%95%A9prefix-sum-2%EC%B0%A8%EC%9B%90-%EB%88%84%EC%A0%81%ED%95%A9prefix-sum-of-matrix-with-java
 
-
+		2. 최대 맛이 1개라면 정답을 찾는 듯한데, 최대 맛이 중복이고, 첫 번째로 고른 최대맛으로는 M개를 못고른다면 실패함
+		M개를 잘라내는 경우를 찾을 수 있도록 백트래킹을 사용해야 할듯
 
 
 
@@ -47,10 +54,10 @@ func main() {
 	var input interface{}
 	// 1st Input
 	input = readLineInt()
-	N, M := input.([]int)[0], input.([]int)[1]
+	N, M = input.([]int)[0], input.([]int)[1]
 
 	// Make Board
-	board := make([][]int, N+1)
+	board = make([][]int, N+1)
 	for i := 0; i <= N; i++ {
 		board[i] = make([]int, 1)
 	}
@@ -61,7 +68,12 @@ func main() {
 		board[i] = append(board[i], input.([]int)...)
 	}
 
-	prefixSum := make([][]int, N+1) // 직사각형 단위의 누적합
+	visited := make([][]bool, N+1) // 잘라낸건지 확인.
+	for i := 0; i <= N; i++ {
+		visited[i] = make([]bool, N+1)
+	}
+
+	prefixSum = make([][]int, N+1) // 직사각형 단위의 누적합
 	for i := 0; i <= N; i++ {
 		prefixSum[i] = make([]int, N+1)
 	}
@@ -73,24 +85,13 @@ func main() {
 		}
 	}
 
-	// 최고 맛 구해보기
-	max := 0
-	for x1 := 1; x1 <= N; x1++ {
-		for y1 := 1; y1 <= N; y1++ {
-			for x2 := x1 + 2; x2 <= N; x2++ {
-				for y2 := y1 + 2; y2 <= N; y2++ {
-					flavor := calcOnion(x1, x2, y1, y2, prefixSum, board)
-					if flavor > max {
-						max = flavor
-					}
-				}
-			}
-		}
+	// 양파깡 구하기 (arg로 startX 등은 Max가 중복이 나는 경우만 의미 있음. 0을 넣으면 초기 시작이라는 것.)
+	result := findOnionGGang(1, 1, 3, 3, 0, visited)
+	if !result {
+		sb.WriteString("0\n")
 	}
 
-	fmt.Printf("%d\n", max)
-	// fmt.Printf("%v", board)
-	fmt.Println(M)
+	writer.WriteString(sb.String())
 
 }
 
@@ -126,4 +127,85 @@ func calcOnion(x1, x2, y1, y2 int, prefixSum, board [][]int) int {
 	emptyFlavor := prefixSum[x2][y2] - prefixSum[x1-1][y2] - prefixSum[x2][y1-1] + prefixSum[x1-1][y1-1]
 
 	return totalFlavor - emptyFlavor
+}
+
+// 현재 판에서 가장 맛있는 맛을 만드는 조건이 여러개라면 각각 경우를 전부 확인 (브루트포스라 해야하나)
+// M개의 양파깡을 만들 수 있다면 true를 반환함.
+func findOnionGGang(startX, startY, endX, endY, depth int, visited [][]bool) bool {
+	results := make([]string, 0)
+
+	for i := depth; i < M; i++ {
+
+		a, b, c, d := 0, 0, 0, 0
+		max := -999999999
+		checkFlag := false
+		for x1 := 1; x1 <= N; x1++ {
+			for y1 := 1; y1 <= N; y1++ {
+
+				if visited[x1][y1] {
+					// 이미 사용한 양파깡 판임
+					continue
+				}
+				// ContinueLoop:
+				for x2 := x1 + 2; x2 <= N; x2++ {
+				ContinueLoop: // Label을 한칸 위로 했어서 x2가 올라가는게 아니라 y1부터 올라갔기때문에 너무 과하게 스킵했었음
+					for y2 := y1 + 2; y2 <= N; y2++ {
+
+						// Max값이 중복인 경우 다른 좌표를 보내왔으므로 그 지점부터 시작하도록.
+						if x1 == 1 && y1 == 1 && x2 == 3 && y2 == 3 {
+							x1, y1, x2, y2 = startX, startY, endX, endY
+						}
+
+						// 이미 사용한 양파깡 판이므로 사용 불가함
+						for x := x1; x <= x2; x++ {
+							for y := y1; y <= y2; y++ {
+								if visited[x][y] {
+									break ContinueLoop
+								}
+							}
+						}
+
+						flavor := calcOnion(x1, x2, y1, y2, prefixSum, board)
+						if flavor > max {
+							checkFlag = true
+							max = flavor
+							a, b, c, d = x1, y1, x2, y2
+						} else if flavor == max {
+							argVisited := visited
+							res := findOnionGGang(x1, y1, x2, y2, i, argVisited)
+							if res {
+								return true
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if checkFlag {
+			// 직사각형 테두리 사용 체크
+			for x := a; x <= c; x++ {
+				for y := b; y <= d; y++ {
+					if x == a || x == c {
+						visited[x][y] = true
+					}
+					if y == b || y == d {
+						visited[x][y] = true
+					}
+				}
+			}
+
+			result := fmt.Sprintf("%d %d %d %d %d\n", max, a, b, c, d)
+			results = append(results, result)
+		} else {
+			sb.Reset()
+			return false
+		}
+	}
+	if len(results) > 0 {
+		for _, val := range results {
+			sb.WriteString(val)
+		}
+	}
+	return true
 }
