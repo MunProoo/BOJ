@@ -36,10 +36,11 @@ func main() {
 		2. differ = 0~Z까지 문자가 나올 때 (Z의 10진수 변환값 - 문자의 10진수 변환값) * 36^자릿수
 			-> 각 문자마다 differ를 합산한다.
 		3. 0~Z까지 문자에 대해서 differ가 가장 큰 대로 K개를 골라서 변경한다.
-		4. 문자를 Z로 변경한 후 36진수로 계산
+		4. differ가 큰 문자를 모두 Z로 변경
+		5. 10진수로 변환하여 합산 계산
+		6. 36진수로 변환하여 출력
 
-
-
+		41% 런타임에러가 떴네?
 	*/
 
 	reader = bufio.NewReader(os.Stdin)
@@ -62,7 +63,7 @@ func main() {
 		commands = append(commands, command)
 
 		pos := 0 // 자릿수
-		for j := len(command) - 1; j > 0; j-- {
+		for j := len(command) - 1; j >= 0; j-- {
 			// 차이 계산
 			differ := calcDiffer(rune(command[j]), pos)
 
@@ -84,9 +85,33 @@ func main() {
 	input = readLineInt()
 	K := input.([]int)[0]
 
-	fmt.Println(N, commands, K)
-	fmt.Println("")
-	fmt.Println(charCounts)
+	// K가 문자의 수보다 많아질 수도 있음 (런타임에러 원인)
+	if K < len(charCounts) {
+		// 실제 문자 변경
+		for i := 0; i < K; i++ {
+			char := charCounts[i].Char
+			for j, command := range commands {
+				command = strings.ReplaceAll(command, string(char), "Z")
+				commands[j] = command
+			}
+		}
+	} else {
+		for j, command := range commands {
+			newCommand := strings.Repeat("Z", len(command))
+			commands[j] = newCommand
+		}
+	}
+
+	result := big.NewInt(0)
+	for _, command := range commands {
+		// 36진수를 10진수로 변경 후 합산
+		result = result.Add(result, base36ToDecimalBigInt(command))
+	}
+
+	// 10진수를 36진수로 변경
+	base36Result := decimalToBase36(result)
+
+	fmt.Println(base36Result)
 
 }
 
@@ -175,7 +200,7 @@ func calcDiffer(char rune, i int) *big.Int {
 
 }
 
-// 36진수 1자릿수를 10진수 변환한 값 (int)
+// 36진수 중 1자릿수를 10진수 변환한 값 (int)
 func transCodeDesc(char rune) int {
 	num := 0
 	if char >= '0' && char <= '9' {
