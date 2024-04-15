@@ -35,6 +35,10 @@ func main() {
 
 		      ::1   ->   0000:0000:0000:0000:0000:0000:0000:0001
 
+
+		틀렸습니다
+		-> 맨앞, 맨뒤의 0그룹이 생략됐을 때와 가운데의 0그룹이 생략됐을때를 다 감안했는데 왜틀릴까
+		1::2 를 할 경우 마지막 2가 안나오네?
 	*/
 
 	reader = bufio.NewReader(os.Stdin)
@@ -58,6 +62,7 @@ func main() {
 		// ::이 있으므로 새로운 0그룹도 추가해야함
 		var zeroGroupCount int
 		zeroGroupList := make([]string, 8)
+		zeroGroupList[0] = "0000:"      // 0그룹 1개
 		zeroGroupList[1] = "0000:0000:" // 0그룹 2개
 		zeroGroupList[2] = "0000:0000:0000:"
 		zeroGroupList[3] = "0000:0000:0000:0000:"
@@ -65,41 +70,21 @@ func main() {
 		zeroGroupList[5] = "0000:0000:0000:0000:0000:0000:"
 		zeroGroupList[6] = "0000:0000:0000:0000:0000:0000:0000:" // 0그룹 7개
 
-		if length < 4 { // 이런 경우엔 2가지 분기처리 필요
-			addressFlag := false
-			addressLocation := 0
-			for idx, group := range contractAddress {
-				if group != "" {
-					addressLocation = idx
-					addressFlag = true
-					break
-				}
+		gapCount := -1 // ""의 개수. ""이 2개면 0그룹이 맨앞이나 맨뒤이므로 0그룹을 1개 더 붙여줘야함
+		for _, group := range contractAddress {
+			if group == "" {
+				gapCount++
 			}
-			if addressFlag {
-				// 1. 주소가 1개는 살아있는 경우 (맨 앞 or 맨 뒤가 살아있음)
-				if addressLocation == 0 {
-					restoreAddress += FillZero(contractAddress[addressLocation])
-					restoreAddress += zeroGroupList[6]
-				} else {
-					restoreAddress += zeroGroupList[6]
-					restoreAddress += FillZero(contractAddress[addressLocation])
-				}
+		}
 
-			} else {
-				// 2. 주소가 모두 0인 경우
-				restoreAddress = "0000:0000:0000:0000:0000:0000:0000:0000:"
-			}
-
-		} else {
-			zeroGroupCount = 8 - length
-			zeroGroupFlag := false
-			for _, group := range contractAddress {
-				if group == "" && !zeroGroupFlag {
-					zeroGroupFlag = true
-					restoreAddress += zeroGroupList[zeroGroupCount]
-				} else {
-					restoreAddress += FillZero(group)
-				}
+		zeroGroupCount = 8 - length + gapCount
+		zeroGroupFlag := false
+		for _, group := range contractAddress {
+			if group == "" && !zeroGroupFlag {
+				zeroGroupFlag = true
+				restoreAddress += zeroGroupList[zeroGroupCount]
+			} else if group != "" {
+				restoreAddress += FillZero(group)
 			}
 		}
 	}
@@ -115,6 +100,8 @@ func FillZero(group string) (newAddress string) {
 	groupLength := len(group)
 	if groupLength != 4 {
 		switch groupLength {
+		case 0:
+			newAddress = "0000"
 		case 1:
 			newAddress = "000" + group
 		case 2:
@@ -125,7 +112,9 @@ func FillZero(group string) (newAddress string) {
 
 		newAddress += ":"
 	} else {
+
 		newAddress += group + ":"
+
 	}
 
 	return
