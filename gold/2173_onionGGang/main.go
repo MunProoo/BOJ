@@ -14,14 +14,11 @@ var (
 	writer *bufio.Writer
 	reader *bufio.Reader
 	sb     strings.Builder
-	sb2    strings.Builder
 
 	// 풀이 변수
 	N, M      int
 	prefixSum [][]int
 	board     [][]int
-
-	maxVisited [][]bool // 이미 사용한 최대값은 제외
 )
 
 func main() {
@@ -133,40 +130,21 @@ func calcOnion(x1, x2, y1, y2 int, prefixSum, board [][]int) int {
 // 현재 판에서 가장 맛있는 맛을 만드는 조건이 여러개라면 각각 경우를 전부 확인 (브루트포스라 해야하나)
 // M개의 양파깡을 만들 수 있다면 true를 반환함.
 func findOnionGGang(startX, startY, endX, endY, depth int, visited [][]bool) bool {
-
-	for i := depth; i < M; i++ {
-
+	// 최고 맛 구해보기
+	for i := 0; i < M; i++ {
 		a, b, c, d := 0, 0, 0, 0
-		max := -999999999
 		checkFlag := false
+		max := -999999999
 
-		// 현재 상황에서 가장 맛있는 값 return
-		maxTaste := findMaxTaste(visited)
-
-		for x1 := 1; x1 <= N-2; x1++ {
-			for y1 := 1; y1 <= N-2; y1++ {
-
-				if visited[x1][y1] {
-					// 이미 사용한 양파깡 판임
-					continue
-				}
-				// ContinueLoop:
+		for x1 := 1; x1 <= N; x1++ {
+			max = -999999999
+			for y1 := 1; y1 <= N; y1++ {
 				for x2 := x1 + 2; x2 <= N; x2++ {
 				ContinueLoop: // Label을 한칸 위로 했어서 x2가 올라가는게 아니라 y1부터 올라갔기때문에 너무 과하게 스킵했었음
 					for y2 := y1 + 2; y2 <= N; y2++ {
-
-						// Max값이 중복인 경우 다른 좌표를 보내왔으므로 그 지점부터 시작하도록.
-						if x1 == 1 && y1 == 1 && x2 == 3 && y2 == 3 && i == depth {
-							x1, y1, x2, y2 = startX, startY, endX, endY
-						}
-
-						// 이미 사용한 양파깡 판이므로 사용 불가함
-						for x := x1; x <= x2; x++ {
-							for y := y1; y <= y2; y++ {
-								if visited[x][y] {
-									break ContinueLoop
-								}
-							}
+						// 이미 사용한 양파깡 판
+						if !chkBoard(x1, y1, x2, y2, visited) {
+							break ContinueLoop
 						}
 
 						flavor := calcOnion(x1, x2, y1, y2, prefixSum, board)
@@ -174,45 +152,50 @@ func findOnionGGang(startX, startY, endX, endY, depth int, visited [][]bool) boo
 							checkFlag = true
 							max = flavor
 							a, b, c, d = x1, y1, x2, y2
-						} else if flavor == maxTaste { // 최고 맛이 중복인 경우
+						} else if flavor == max {
 
+							// 독립적으로 시행하도록 새로운 visted 파라미터 생성
 							argVisited := make([][]bool, N+1)
 							for i, val := range visited {
 								argVisited[i] = make([]bool, 0)
 								argVisited[i] = append(argVisited[i], val...)
 							}
-							// 중복 탐색 배제
-							visitMarker(x1, y1, x2, y2, argVisited)
-							tempResult := sb.String()
-
-							resultSave(max, x1, y1, x2, y2)
-							res := findOnionGGang(x1, y1, x2, y2, i+1, argVisited)
-							if res {
+							headAche := findOnionGGang(x1, y1, x2, y2, i, argVisited)
+							if headAche {
 								return true
 							}
-							sb.WriteString(tempResult)
 						}
-
 					}
 				}
 			}
 		}
-
 		if checkFlag {
 			// 직사각형 테두리 사용 체크
-			visitMarker(a, b, c, d, visited)
+			visitedMarker(a, b, c, d, visited)
 
-			resultSave(max, a, b, c, d)
+			result := fmt.Sprintf("%d %d %d %d %d\n", max, a, b, c, d)
+			sb.WriteString(result)
 		} else {
 			sb.Reset()
+			sb.WriteString("0")
 			return false
 		}
 	}
-
 	return true
 }
 
-func visitMarker(a, b, c, d int, visited [][]bool) {
+func chkBoard(x1, y1, x2, y2 int, visited [][]bool) bool {
+	for x := x1; x <= x2; x++ {
+		for y := y1; y <= y2; y++ {
+			if visited[x][y] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func visitedMarker(a, b, c, d int, visited [][]bool) {
 	for x := a; x <= c; x++ {
 		for y := b; y <= d; y++ {
 			if x == a || x == c {
@@ -223,38 +206,4 @@ func visitMarker(a, b, c, d int, visited [][]bool) {
 			}
 		}
 	}
-}
-
-func resultSave(max, a, b, c, d int) {
-	result := fmt.Sprintf("%d %d %d %d %d\n", max, a, b, c, d)
-	sb.WriteString(result)
-}
-
-func findMaxTaste(visited [][]bool) int {
-	max := -999999999
-	for x1 := 1; x1 <= N-2; x1++ {
-		for y1 := 1; y1 <= N-2; y1++ {
-			// ContinueLoop:
-			for x2 := x1 + 2; x2 <= N; x2++ {
-			ContinueLoop: // Label을 한칸 위로 했어서 x2가 올라가는게 아니라 y1부터 올라갔기때문에 너무 과하게 스킵했었음
-				for y2 := y1 + 2; y2 <= N; y2++ {
-					// 이미 사용한 양파깡 판이므로 사용 불가함
-					for x := x1; x <= x2; x++ {
-						for y := y1; y <= y2; y++ {
-							if visited[x][y] {
-								break ContinueLoop
-							}
-						}
-					}
-
-					flavor := calcOnion(x1, x2, y1, y2, prefixSum, board)
-					if flavor > max {
-						max = flavor
-					}
-				}
-			}
-		}
-	}
-
-	return max
 }
